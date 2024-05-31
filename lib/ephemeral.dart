@@ -1,12 +1,17 @@
 typedef WeakKeyMap = Expando;
 
-/// Does not work with value types of numbers, strings, booleans, records, null, dart:ffi pointers, dart:ffi structs, or dart:ffi unions.
-/// Like with [Expando], these do not work as these are often cloned internally in dart and there is no assciated object
-/// id for these types, so any added here they will be instantly garbage collected, if you want to use these, wrap them in a [Wrapper].
+/// A map where if there are no other references to the value, the entry can be garbage collected.
+/// Like with [Expando], does not work with value types of numbers, strings, booleans, records, null, dart:ffi pointers, dart:ffi structs, or dart:ffi unions.
+/// If you want to use these types, wrap them in a [Wrapper].
 ///
-// Dev Note: Cannot extend [Map] since iterable methods or methods passing functions on map could cause concurrent modification
-// if an entry is garbage collected during the operation.
-class WeakValueMap<K, V extends Object> {
+// Dev Note:
+// The types that do not work, do not work since these are often cloned internally in dart and there is no assciated object
+// id for these types, so any added here they will be instantly garbage collected.
+//
+// Cannot extend [Map] since iterable methods on map could cause concurrent modification
+// if an entry is garbage collected during the operation (since [Finalizer] runs on the same thread, this can only occur
+// if `await` is called).
+class WeakValueMap<K extends Object, V extends Object> {
   final Map<K, WeakReference<V>> _map = {};
   late final Finalizer<K> _finalizer;
 
@@ -31,7 +36,13 @@ class WeakValueMap<K, V extends Object> {
   }
 
   void operator []=(K key, V value) {
-    _finalizer.attach(value, key);
+    final oldValue = _map[key];
+    // Don't want the finalizer to later be called for an old value of this key.
+    final detach = Wrapper(key);
+    if (oldValue != null) {
+      _finalizer.detach(detach);
+    }
+    _finalizer.attach(value, key, detach: detach);
     _map[key] = WeakReference(value);
   }
 
@@ -56,7 +67,7 @@ class WeakValueMap<K, V extends Object> {
 
   /// Checks if the map contains the [key].
   bool containsKey(K key) {
-    return _map.containsKey(key);
+    return this[key] != null;
   }
 
   /// Checks if the map contains the [value].
@@ -85,6 +96,60 @@ class WeakValueMap<K, V extends Object> {
   /// Removes the [key] from the map and returns the value associated with the [key].
   V? remove(K key) {
     return _map.remove(key)?.target;
+  }
+
+  /// Apply the [action] function to each key-value pair of the map.
+  void forEach(void Function(K key, V value) action) {
+    _map.forEach((key, value) {
+      final target = value.target;
+      if (target == null) return;
+      action(key, target);
+    });
+  }
+
+  /// Returns a new map with the same keys and values as this map, but with the [convert] function applied to each key and value.
+  WeakValueMap<K2, V2> map<K2 extends Object, V2 extends Object>(
+      MapEntry<K2, V2> Function(K key, V value) convert) {
+    final map = WeakValueMap<K2, V2>();
+    _map.forEach((key, value) {
+      final target = value.target;
+      if (target == null) return;
+      final entry = convert(key, target);
+      map[entry.key] = entry.value;
+    });
+    return map;
+  }
+
+  void removeWhere(bool Function(K key, V value) test) {
+    _map.removeWhere((key, value) {
+      final target = value.target;
+      if (target == null) return false;
+      return test(key, target);
+    });
+  }
+
+  /// Updates the value of the [key] with the [update] function. If the [key] is not in the map,
+  /// the [ifAbsent] function is used instead.
+  V? update(K key, V Function(V value) update, {V Function()? ifAbsent}) {
+    final value = this[key];
+    if (value == null) {
+      if (ifAbsent == null) return null;
+      final newValue = ifAbsent();
+      this[key] = newValue;
+      return newValue;
+    }
+    final newValue = update(value);
+    this[key] = newValue;
+    return newValue;
+  }
+
+  /// Updates all values in the map with the [update] function.
+  void updateAll(V Function(K key, V value) update) {
+    _map.forEach((key, value) {
+      final target = value.target;
+      if (target == null) return;
+      this[key] = update(key, target);
+    });
   }
 }
 
