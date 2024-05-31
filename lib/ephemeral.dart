@@ -3,112 +3,92 @@ typedef WeakKeyMap = Expando;
 /// Does not work with value types of numbers, strings, booleans, records, null, dart:ffi pointers, dart:ffi structs, or dart:ffi unions.
 /// Like with [Expando], these do not work as these are often cloned internally in dart and there is no assciated object
 /// id for these types, so any added here they will be instantly garbage collected, if you want to use these, wrap them in a [Wrapper].
-/// 
-// Dev Note: Cannot [Map] since iterable methods on map could cause concurrent modification issues.
+///
+// Dev Note: Cannot extend [Map] since iterable methods or methods passing functions on map could cause concurrent modification
+// if an entry is garbage collected during the operation.
 class WeakValueMap<K, V extends Object> {
   final Map<K, WeakReference<V>> _map = {};
-  late final Finalizer<Wrapper<K>> _finalizer;
+  late final Finalizer<K> _finalizer;
 
   WeakValueMap() {
     _finalizer = Finalizer((key) {
-      _map.remove(key.val);
+      _map.remove(key);
     });
   }
 
-  V? operator [](Object? key) {
+  /// Creates a new concrete map from this [WeakValueMap].
+  Map<K, V> toMap() => _map.entries.fold({}, (previousValue, element) {
+        final target = element.value.target;
+        if (target == null) {
+          return previousValue;
+        }
+        previousValue[element.key] = target;
+        return previousValue;
+      });
+
+  V? operator [](K key) {
     return _map[key]?.target;
   }
 
   void operator []=(K key, V value) {
-    // If wrapper is not use then an error is yielded if the key and value are the same type and value //todo check
-    _finalizer.attach(value, Wrapper(key));
+    _finalizer.attach(value, key);
     _map[key] = WeakReference(value);
   }
-  
-  @override
+
+  /// Adds all key-value pairs of [other] to this map.
   void addAll(Map<K, V> other) {
-    // TODO: implement addAll
+    other.forEach((key, value) {
+      this[key] = value;
+    });
   }
-  
-  @override
+
+  /// Adds all key-value pairs of [newEntries] to this map.
   void addEntries(Iterable<MapEntry<K, V>> newEntries) {
-    // TODO: implement addEntries
+    for (final element in newEntries) {
+      this[element.key] = element.value;
+    }
   }
-  
-  @override
-  Map<RK, RV> cast<RK, RV>() {
-    // TODO: implement cast
-    throw UnimplementedError();
-  }
-  
-  @override
+
+  /// Clears the map
   void clear() {
-    // TODO: implement clear
+    _map.clear();
   }
-  
-  @override
-  bool containsKey(Object? key) {
-    // TODO: implement containsKey
-    throw UnimplementedError();
+
+  /// Checks if the map contains the [key].
+  bool containsKey(K key) {
+    return _map.containsKey(key);
   }
-  
-  @override
-  bool containsValue(Object? value) {
-    // TODO: implement containsValue
-    throw UnimplementedError();
+
+  /// Checks if the map contains the [value].
+  bool containsValue(V value) {
+    return _map.values.any((e) => e.target == value);
   }
-  
-  @override
-  void forEach(void Function(K key, V value) action) {
-    // TODO: implement forEach
-  }
-  
-  @override
-  // TODO: implement isEmpty
-  bool get isEmpty => throw UnimplementedError();
-  
-  @override
-  // TODO: implement isNotEmpty
-  bool get isNotEmpty => throw UnimplementedError();
-  
-  @override
+
+  bool get isEmpty => _map.isEmpty;
+
+  bool get isNotEmpty => _map.isNotEmpty;
+
   int get length => _map.length;
-  
-  @override
-  Map<K2, V2> map<K2, V2>(MapEntry<K2, V2> Function(K key, V value) convert) {
-    // TODO: implement map
-    throw UnimplementedError();
-  }
-  
-  @override
+
+  /// Puts the [key] and [value] in the map if the [key] is not already in the map. Returns the value that is in the map
+  /// after being called.
   V putIfAbsent(K key, V Function() ifAbsent) {
-    // TODO: implement putIfAbsent
-    throw UnimplementedError();
+    final existing = this[key];
+    if (existing == null) {
+      final value = ifAbsent();
+      this[key] = value;
+      return value;
+    }
+    return existing;
   }
-  
-  @override
-  V? remove(Object? key) {
-    // TODO: implement remove
-    throw UnimplementedError();
-  }
-  
-  @override
-  void removeWhere(bool Function(K key, V value) test) {
-    // TODO: implement removeWhere
-  }
-  
-  @override
-  V update(K key, V Function(V value) update, {V Function()? ifAbsent}) {
-    // TODO: implement update
-    throw UnimplementedError();
-  }
-  
-  @override
-  void updateAll(V Function(K key, V value) update) {
-    // TODO: implement updateAll
+
+  /// Removes the [key] from the map and returns the value associated with the [key].
+  V? remove(K key) {
+    return _map.remove(key)?.target;
   }
 }
 
+/// A wrapper class.
 class Wrapper<T> {
   T val;
 
@@ -118,7 +98,7 @@ class Wrapper<T> {
   bool operator ==(Object other) {
     return other is Wrapper<T> && other.val == val;
   }
-  
+
   @override
   int get hashCode => val.hashCode;
 }
