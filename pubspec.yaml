@@ -1,7 +1,7 @@
 name: ephemeral
-description: ephemeral (weak) data types like Map
-version: 0.1.0
-# repository: https://github.com/my_org/my_repo
+description: Weak data types like WeakValueMap and WeakKeyMap
+version: 0.2.0
+repository: https://github.com/mcmah309/ephemeral
 
 environment:
   sdk: ^3.3.0

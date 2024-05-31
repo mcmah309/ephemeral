@@ -5,7 +5,7 @@ import 'package:ephemeral/ephemeral.dart';
 /// If you want to use these types, wrap them in a [Wrapper].
 ///
 // Dev Notes:
-// For the types that do not work, the [Expando] class has some of the reasoning, but also, 
+// For the types that do not work, the [Expando] class has some of the reasoning, but also,
 // these are often cloned internally in dart when passed around, so any added here they will be instantly garbage collected.
 //
 // Cannot extend [Map] since iterable methods on map could cause concurrent modification
